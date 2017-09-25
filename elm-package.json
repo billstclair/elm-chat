@@ -1,12 +1,14 @@
 {
-    "version": "1.0.0",
+    "version": "1.1.1",
     "summary": "A simple chat component, easy to add to your user interface.",
     "repository": "https://github.com/billstclair/elm-chat.git",
     "license": "MIT",
     "source-directories": [
         "."
     ],
-    "exposed-modules": ["ElmChat"],
+    "exposed-modules": [
+        "ElmChat"
+    ],
     "dependencies": {
         "elm-lang/core": "5.1.1 <= v < 6.0.0",
         "elm-lang/dom": "1.1.1 <= v < 2.0.0",
