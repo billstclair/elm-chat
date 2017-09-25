@@ -9,28 +9,31 @@
 --
 ----------------------------------------------------------------------
 
-
-module ElmChat exposing ( Settings, makeSettings, chat, addChat, inputBox )
+module ElmChat exposing ( Settings, ExtraAttributes
+                        , makeSettings, chat, addChat, inputBox
+                        , defaultExtraAttributes
+                        )
 
 {-| This module contains a simple chat component
 that you can easily add to your Elm user interface.
 
 # Types
-@docs Settings
+@docs Settings, ExtraAttributes
 
 # Functions
 @docs makeSettings, chat, addChat, inputBox
+
+# Variables
+@docs defaultExtraAttributes
 -}
 
 import Html exposing ( Html, Attribute
-                     , div, text, span, p, h2, h3, a, node
+                     , text, span
                      , input, table, tr, th, td, button
                      , textarea
                      )
-import Html.Attributes exposing ( value, size, maxlength, href, src, title
-                                , alt, style, selected, type_, name, checked
-                                , placeholder, disabled, target
-                                , width, height, class
+import Html.Attributes exposing ( value, size, title
+                                , style, type_
                                 , readonly, id
                                 )
 import Html.Events exposing ( onClick, onInput, on, keyCode )
@@ -38,15 +41,46 @@ import Dom.Scroll as Scroll
 import Task
 import Json.Decode as Json
 
-{-| Settings for the chat component
+{-| Settings for the chat component.
+Make one of these with `makeSettings`.
 -}
 type alias Settings msg =
     { fontSize : Int
     , text : String
     , input : String
     , scroll : Float
+    , attributes : ExtraAttributes msg
     , id : String
+    , defaultFontSize : Int
+    , showSizeControls : Bool
     , updater : TheUpdater msg
+    }
+
+{-| Extra attributes for the UI components.
+This is the value of `Settings.attributes`.
+You'll usually create one by changing `defaultAttributes`.
+-}
+type alias ExtraAttributes msg =
+    { sizeButtons : List (Attribute msg)
+    , sizeColumn : List (Attribute msg)
+    , textColumn : List (Attribute msg)
+    , textArea : List (Attribute msg)
+    }
+
+{-| The default value of the `Settings.attributes` property.
+-}
+defaultExtraAttributes : ExtraAttributes msg
+defaultExtraAttributes =
+    { sizeButtons = [ style [ ("font-weight", "bold") ] ]
+    , sizeColumn = [ style [ ("text-align", "center")
+                           , ("vertical-align", "top")
+                           ]
+                   ]
+    , textColumn = []
+    , textArea = [ style [ ("width", "30em")
+                         , ("height", "6em")
+                         ]
+                 ]
     }
 
 type alias Updater msg =
@@ -55,21 +89,21 @@ type alias Updater msg =
 type TheUpdater msg
     = TheUpdater (Updater msg)
 
-defaultFontSize : Int
-defaultFontSize =
-    20
-
 {-| Make a Settings record to add to your Model.
 id is the Html id for the textarea showing the chat.
+initialFontSize is the initial font size of the textarea in `pt`.
 updater will be called to generate messages to update the Settings in your Model.
 -}
-makeSettings : String -> Updater msg -> Settings msg
-makeSettings id updater =
-    { fontSize = defaultFontSize
+makeSettings : String -> Int -> Bool -> Updater msg -> Settings msg
+makeSettings id initialFontSize showSizeControls updater =
+    { fontSize = initialFontSize
     , text = ""
     , input = ""
     , scroll = -1000
+    , attributes = defaultExtraAttributes
     , id = id
+    , defaultFontSize = initialFontSize
+    , showSizeControls = showSizeControls
     , updater = TheUpdater updater
     }
 
@@ -91,7 +125,7 @@ scroll settings amount =
             update
                 { settings | scroll = s }
                 (Task.attempt (\_ -> noUpdate settings)
-                     <| Scroll.toBottom "chat"
+                     <| Scroll.toBottom settings.id
                 )
         else
             noUpdate settings
@@ -103,13 +137,11 @@ setFontSize settings dir =
         newsize = if dir > 0 then
                       size + inc
                   else if dir == 0 then
-                           defaultFontSize
+                           settings.defaultFontSize
                        else
                            size - inc
     in
-        update
-            { settings | fontSize = newsize }
-            Cmd.none
+        noUpdate { settings | fontSize = newsize }
 
 br : Html msg
 br =
@@ -117,10 +149,12 @@ br =
 
 chatSizeButton : Settings msg -> (Int, String, String) -> List (Html msg)
 chatSizeButton settings (size, title_, label) =
-    [ button [ onClick <| setFontSize settings size
-             , title title_
-             --, class "chatsizebutton"
-             ]
+    [ button (List.append
+                  [ onClick <| setFontSize settings size
+                  , title title_
+                  ]
+                  settings.attributes.sizeButtons
+             )
           [ text label ]
     , br
     ]
@@ -131,18 +165,27 @@ chat : Settings msg -> Html msg
 chat settings =
     table []
         [ tr []
-              [ td [ class "chatsizecolumn" ]
-                    <| List.concatMap (chatSizeButton settings)
-                    [ (1, "Increase chat size", "^")
-                    , (0, "Default chat size", "O")
-                    , (-1, "Decrease chat size", "v")
-                    ]
-              , td []
-                  [ textarea [ id "chat"
-                             , class "chat"
-                             , readonly True
-                             ]
-                        -- TODO: make player names bold.
+              [ if settings.showSizeControls then
+                    td settings.attributes.sizeColumn
+                        <| List.concatMap (chatSizeButton settings)
+                            [ (1, "Increase chat size", "^")
+                            , (0, "Default chat size", "O")
+                            , (-1, "Decrease chat size", "v")
+                            ]
+                else
+                    text ""
+              , td settings.attributes.textColumn
+                  [ textarea
+                        ( List.append
+                              [ id settings.id
+                              , style [ ( "font-size"
+                                        , (toString settings.fontSize) ++ "pt"
+                                        )
+                                      ]
+                              , readonly True
+                              ]
+                              settings.attributes.textArea
+                        )
                         [ text <| settings.text ]
                   ]
               ]
@@ -150,7 +193,7 @@ chat settings =
 
 {-| Add a line to the chat box.
 -}
-addChat : Settings msg -> String -> msg
+addChat : Settings msg -> String -> (Settings msg, Cmd msg)
 addChat settings message =
     let newText = if settings.text == "" then
                       settings.text
@@ -159,14 +202,14 @@ addChat settings message =
         newSettings = { settings | text = newText ++ message }
 
     in
-        update
-            newSettings
-            <| Task.attempt (\res ->
-                                 case res of
-                                     Ok amount -> scroll settings amount
-                                     Err _ -> noUpdate settings
-                            )
-                <| Scroll.y "chat"
+        ( newSettings
+        , Task.attempt (\res ->
+                            case res of
+                                Ok amount -> scroll newSettings amount
+                                Err _ -> noUpdate newSettings
+                       )
+              <| Scroll.y settings.id
+        )
 
 ---
 --- Input boxes
@@ -197,7 +240,7 @@ inputBox : Int -> String -> Sender msg -> Settings msg -> Html msg
 inputBox textSize buttonText sender settings =
     span []
         [ input [ type_ "text"
-                , onInput (\text -> noUpdate { settings | text = text } )
+                , onInput (\text -> noUpdate { settings | input = text } )
                 , onKeydown <| keyDown sender settings
                 , size textSize
                 , value settings.input
