@@ -1,10 +1,8 @@
-# elm-chat
-
-This is a simple chat component, designed to be easy to add to your user interface.
+The [billstclair/elm-chat](http://package.elm-lang.org/packages/billstclair/elm-chat/latest) package implements a simple chat component, designed to be easy to add to your user interface.
 
 I use a WebSocket interface to feed it input, which you can see in my [Archmage game](https://github.com/billstclair/archmage/).
 
-The [example directory](example/) has a simple self-contained UI, with separate text input areas for two chatters. It's live at [gibgoygames.com/elm-chat](https://gibgoygames.com/elm-chat/).
+The [example/ElmChatExample.elm](example/ElmChatExample.elm) is a simple self-contained UI, with separate text input areas for two chatters. It's live at [gibgoygames.com/elm-chat](https://gibgoygames.com/elm-chat/).
 
 You need to reserve space for the chat `Settings` record in your model:
 
@@ -61,8 +59,6 @@ Handle the messages in your `update` function.
 Where `sendLine` is a function you write that returns a `Cmd` to send the line over the wire.
 
 You can style the UI components with the `Settings.attributes` property. See the code for details.
-
-Open source: [github.com/billstclair/elm-chat](https://github.com/billstclair/elm-chat)
 
 Bill St. Clair<br/>
 24 September, 2017

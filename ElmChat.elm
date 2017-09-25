@@ -61,7 +61,8 @@ This is the value of `Settings.attributes`.
 You'll usually create one by changing `defaultAttributes`.
 -}
 type alias ExtraAttributes msg =
-    { sizeButtons : List (Attribute msg)
+    { chatTable : List (Attribute msg)
+    , sizeButtons : List (Attribute msg)
     , sizeColumn : List (Attribute msg)
     , textColumn : List (Attribute msg)
     , textArea : List (Attribute msg)
@@ -71,7 +72,8 @@ type alias ExtraAttributes msg =
 -}
 defaultExtraAttributes : ExtraAttributes msg
 defaultExtraAttributes =
-    { sizeButtons = [ style [ ("font-weight", "bold") ] ]
+    { chatTable = []
+    , sizeButtons = [ style [ ("font-weight", "bold") ] ]
     , sizeColumn = [ style [ ("text-align", "center")
                            , ("vertical-align", "top")
                            ]
@@ -163,7 +165,7 @@ chatSizeButton settings (size, title_, label) =
 -}
 chat : Settings msg -> Html msg
 chat settings =
-    table []
+    table (settings.attributes.chatTable)
         [ tr []
               [ if settings.showSizeControls then
                     td settings.attributes.sizeColumn

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+elm make example/ElmChatExample.elm --output index.html
+rsync index.html xossbow:/var/www/gibgoygames.com/elm-chat/
+rm index.html
+
