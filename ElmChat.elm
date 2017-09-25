@@ -9,7 +9,7 @@
 --
 ----------------------------------------------------------------------
 
-module ElmChat exposing ( Settings, ExtraAttributes
+module ElmChat exposing ( Settings, ExtraAttributes, Updater, Sender
                         , makeSettings, chat, addChat, inputBox
                         , defaultExtraAttributes
                         )
@@ -18,7 +18,7 @@ module ElmChat exposing ( Settings, ExtraAttributes
 that you can easily add to your Elm user interface.
 
 # Types
-@docs Settings, ExtraAttributes
+@docs Settings, ExtraAttributes, Updater, Sender
 
 # Functions
 @docs makeSettings, chat, addChat, inputBox
@@ -42,7 +42,8 @@ import Task
 import Json.Decode as Json
 
 {-| Settings for the chat component.
-Make one of these with `makeSettings`.
+
+Make one of these with `makeSettings`, and store it in your model.
 -}
 type alias Settings msg =
     { fontSize : Int
@@ -57,7 +58,9 @@ type alias Settings msg =
     }
 
 {-| Extra attributes for the UI components.
-This is the value of `Settings.attributes`.
+
+This is the initial value of `Settings.attributes`.
+
 You'll usually create one by changing `defaultAttributes`.
 -}
 type alias ExtraAttributes msg =
@@ -85,6 +88,8 @@ defaultExtraAttributes =
                  ]
     }
 
+{-| A function to turn a `Settings` record and a `Cmd` into a `Msg`.
+-}
 type alias Updater msg =
     Settings msg -> Cmd msg -> msg
 
@@ -92,9 +97,16 @@ type TheUpdater msg
     = TheUpdater (Updater msg)
 
 {-| Make a Settings record to add to your Model.
-id is the Html id for the textarea showing the chat.
-initialFontSize is the initial font size of the textarea in `pt`.
-updater will be called to generate messages to update the Settings in your Model.
+
+Args are `id initialFontSize showSizeControls updater`.
+
+`id` is the Html id for the textarea showing the chat.
+
+`initialFontSize` is the initial font size of the textarea in `pt`.
+
+`showSizeControls` is `True` to show the font size controls to the left of the text area.
+
+`updater` will be called to generate messages to update the Settings in your Model.
 -}
 makeSettings : String -> Int -> Bool -> Updater msg -> Settings msg
 makeSettings id initialFontSize showSizeControls updater =
@@ -217,6 +229,8 @@ addChat settings message =
 --- Input boxes
 ---
 
+{-| A function to turn an input string and a `Settings` record into a `Msg`.
+-}
 type alias Sender msg =
     String -> Settings msg -> msg
 
@@ -235,8 +249,17 @@ onKeydown : (Int -> msg) -> Attribute msg
 onKeydown tagger =
   on "keydown" (Json.map tagger keyCode)
 
-{-| Create a text input area of the given textSize (characters),
-with a send button with the given buttonText.
+{-| Create a text input control.
+
+Args are `textSize buttonText sender settings`.
+
+`textSize` is the width in characters of the input control.
+
+`buttonText` is the text for the button that sends the input.
+
+`sender` is a function to turn an input string and `settings into a `Msg`.
+
+`settings` is your `Settings` record.
 -}
 inputBox : Int -> String -> Sender msg -> Settings msg -> Html msg
 inputBox textSize buttonText sender settings =
