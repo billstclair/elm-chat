@@ -12,6 +12,9 @@
 module ElmChat exposing ( Settings, ExtraAttributes, Updater, Sender
                         , makeSettings, chat, addChat, inputBox
                         , defaultExtraAttributes
+                        , encodeSettings, settingsEncoder
+                        , decodeSettings, settingsDecoder
+                        , restoreScroll
                         )
 
 {-| This module contains a simple chat component
@@ -22,6 +25,8 @@ that you can easily add to your Elm user interface.
 
 # Functions
 @docs makeSettings, chat, addChat, inputBox
+@docs encodeSettings, settingsEncoder, decodeSettings, settingsDecoder
+@docs restoreScroll
 
 # Variables
 @docs defaultExtraAttributes
@@ -39,7 +44,9 @@ import Html.Attributes exposing ( value, size, title
 import Html.Events exposing ( onClick, onInput, on, keyCode )
 import Dom.Scroll as Scroll
 import Task
-import Json.Decode as Json
+import Json.Decode as JD exposing ( Decoder )
+import Json.Encode as JE exposing ( Value )
+
 
 {-| Settings for the chat component.
 
@@ -136,11 +143,13 @@ scroll settings amount =
     let s = amount-1
     in
         if s >= settings.scroll then
-            update
-                { settings | scroll = s }
-                (Task.attempt (\_ -> noUpdate settings)
-                     <| Scroll.toBottom settings.id
-                )
+            let newSettings = { settings | scroll = s }
+            in
+                update
+                    newSettings
+                    (Task.attempt (\_ -> noUpdate newSettings)
+                         <| Scroll.toBottom settings.id
+                    )
         else
             noUpdate settings
 
@@ -247,7 +256,7 @@ send sender settings =
 
 onKeydown : (Int -> msg) -> Attribute msg
 onKeydown tagger =
-  on "keydown" (Json.map tagger keyCode)
+  on "keydown" (JD.map tagger keyCode)
 
 {-| Create a text input control.
 
@@ -275,3 +284,78 @@ inputBox textSize buttonText sender settings =
         , button [ onClick <| send sender settings ]
             [ text buttonText ]
     ]
+
+---
+--- Encoder & Decoder
+---
+
+{-| Turn chat `Settings` into a JSON string.
+
+Does not encode the `attributes` or `updater` properties.
+-}
+encodeSettings : Settings msg -> String
+encodeSettings settings =
+    JE.encode 0 <| settingsEncoder settings
+
+{-| The JSON encoder for `encodeSettings`.
+-}
+settingsEncoder : Settings msg -> Value
+settingsEncoder settings =
+    JE.object
+        [ ("fontSize", JE.int settings.fontSize)
+        , ("text", JE.string settings.text)
+        , ("input", JE.string settings.input)
+        , ("scroll", JE.float settings.scroll)
+        , ("id", JE.string settings.id)
+        , ("defaultFontSize", JE.int settings.defaultFontSize)
+        , ("showSizeControls", JE.bool settings.showSizeControls)
+        ]
+
+{-| Turn a JSON string back into a `Settings` record.
+
+`Updater` is as to `makeSettings`.
+
+Restores with default `attributes`, so you'll need to change those
+after decoding, if you customize them.
+-}
+decodeSettings : Updater msg -> String -> Result String (Settings msg)
+decodeSettings updater json =
+    JD.decodeString (settingsDecoder updater) json
+
+restoreSettings : Updater msg -> Int -> String -> String -> Float -> String -> Int -> Bool -> Settings msg
+restoreSettings updater fontSize text input scroll id defaultFontSize showSizeControls =
+    { fontSize = fontSize
+    , text = text
+    , input = input
+    , scroll = scroll
+    , attributes = defaultExtraAttributes
+    , id = id
+    , defaultFontSize = defaultFontSize
+    , showSizeControls = showSizeControls
+    , updater = TheUpdater updater
+    }
+    
+{-| The JSON Decoder for `decodeSettings`.
+-}
+settingsDecoder : Updater msg -> Decoder (Settings msg)
+settingsDecoder updater =
+    JD.map8 restoreSettings
+        (JD.succeed updater)
+        (JD.field "fontSize" JD.int)
+        (JD.field "text" JD.string)
+        (JD.field "input" JD.string)
+        (JD.field "scroll" JD.float)
+        (JD.field "id" JD.string)
+        (JD.field "defaultFontSize" JD.int)
+        (JD.field "showSizeControls" JD.bool)
+
+---
+--- Restore scroll
+---
+
+{-| Restore the scroll position after restoring from a JSON string.
+-}
+restoreScroll : Settings msg -> Cmd msg
+restoreScroll settings =
+    Task.attempt (\_ -> noUpdate settings)
+         <| Scroll.toY settings.id (settings.scroll + 1)
