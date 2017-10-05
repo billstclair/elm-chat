@@ -1,5 +1,5 @@
 {
-    "version": "1.1.1",
+    "version": "1.2.0",
     "summary": "A simple chat component, easy to add to your user interface.",
     "repository": "https://github.com/billstclair/elm-chat.git",
     "license": "MIT",
