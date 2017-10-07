@@ -138,16 +138,28 @@ noUpdate : Settings msg -> msg
 noUpdate settings =
     update settings Cmd.none
 
+getScroll : Settings msg -> msg
+getScroll settings =
+    update settings
+        (Task.attempt (\result ->
+                           case result of
+                               Err _ ->
+                                   noUpdate settings
+                               Ok y ->
+                                   noUpdate { settings | scroll = y }
+                      )
+             <| Scroll.y settings.id
+        )
+
 scroll : Settings msg -> Float -> msg
 scroll settings amount =
-    let s = amount-1
+    let s = amount
     in
         if s >= settings.scroll then
             let newSettings = { settings | scroll = s }
             in
-                update
-                    newSettings
-                    (Task.attempt (\_ -> noUpdate newSettings)
+                update newSettings
+                    (Task.attempt (\_ -> getScroll newSettings)
                          <| Scroll.toBottom settings.id
                     )
         else
