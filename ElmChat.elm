@@ -35,6 +35,7 @@ module ElmChat
         , inputBox
         , makeLineSpec
         , makeSettings
+        , parseOutUrl
         , restoreScroll
         , settingsDecoder
         , settingsEncoder
@@ -64,7 +65,7 @@ module ElmChat
 
 # Utilities
 
-@docs timeString, timestampString
+@docs timeString, timestampString, parseOutUrl
 
 
 # Custom rendering
@@ -87,6 +88,7 @@ import Html
     exposing
         ( Attribute
         , Html
+        , a
         , b
         , button
         , div
@@ -101,10 +103,12 @@ import Html
         )
 import Html.Attributes
     exposing
-        ( id
+        ( href
+        , id
         , readonly
         , size
         , style
+        , target
         , title
         , type_
         , value
@@ -112,6 +116,7 @@ import Html.Attributes
 import Html.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
+import Regex exposing (HowMany(..), Regex, regex)
 import Task
 import Time exposing (Time)
 
@@ -120,6 +125,7 @@ import Time exposing (Time)
 -}
 type LineSpec state
     = StringLineSpec String
+    | UrlLineSpec String
     | UserLineSpec
         { user : String
         , linespec : LineSpec state
@@ -145,13 +151,56 @@ makeLineSpec message user time =
         Nothing ->
             case user of
                 Nothing ->
-                    StringLineSpec message
+                    UrlLineSpec message
 
                 Just user ->
                     UserLineSpec
                         { user = user
-                        , linespec = StringLineSpec message
+                        , linespec = UrlLineSpec message
                         }
+
+
+urlRegex : Regex
+urlRegex =
+    regex "(.*\\s+|^)([A-Za-z]*://\\S*|\\w+\\.[A-Za-z]+\\S*)(.*)"
+
+
+{-| Parse the first URL out of a string.
+
+The result is `Just (prefix, url, suffix)`, if there is a URL, or `Nothing` otherwise.
+
+"foo.com" is interpreted as a URL, but is returned as just "foo.com". You have to prepend the <http://> yourself, if that's what you need.
+
+-}
+parseOutUrl : String -> Maybe ( String, String, String )
+parseOutUrl string =
+    case Regex.find (AtMost 1) urlRegex string of
+        [ match ] ->
+            case match.submatches of
+                [ Just prefix, Just url, Just suffix ] ->
+                    let
+                        ( realUrl, urlSuffix ) =
+                            trimUrl url
+                    in
+                    Just ( prefix, realUrl, urlSuffix ++ suffix )
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+trimUrl : String -> ( String, String )
+trimUrl url =
+    let
+        lastChar =
+            String.right 1 url
+    in
+    if List.member lastChar [ ".", "?", "!" ] then
+        ( String.dropRight 1 url, lastChar )
+    else
+        ( url, "" )
 
 
 {-| Used to customize rendering.
@@ -446,6 +495,9 @@ renderLineSpecInternal settings linespec =
         StringLineSpec string ->
             text string
 
+        UrlLineSpec string ->
+            renderStringWithUrls string
+
         UserLineSpec { user, linespec } ->
             span []
                 [ b []
@@ -481,6 +533,40 @@ renderLineSpecInternal settings linespec =
 
                         Just r ->
                             r state settings
+
+
+renderStringWithUrls : String -> Html msg
+renderStringWithUrls string =
+    let
+        loop : String -> List (Html msg) -> Html msg
+        loop =
+            \tail res ->
+                if tail == "" then
+                    span [] res
+                else
+                    case parseOutUrl tail of
+                        Nothing ->
+                            loop "" <|
+                                List.concat [ res, [ text tail ] ]
+
+                        Just ( prefix, url, suffix ) ->
+                            let
+                                withProtocol =
+                                    if String.contains "://" url then
+                                        url
+                                    else
+                                        "http://" ++ url
+                            in
+                            loop suffix <|
+                                List.concat
+                                    [ res
+                                    , [ text prefix
+                                      , a [ href withProtocol, target "_blank" ]
+                                            [ text url ]
+                                      ]
+                                    ]
+    in
+    loop string []
 
 
 hourFormat : Format Date String
@@ -668,16 +754,20 @@ lineSpecEncoder linespec =
         StringLineSpec string ->
             JE.string string
 
+        UrlLineSpec string ->
+            JE.object
+                [ ( "url", JE.string string ) ]
+
         UserLineSpec r ->
             JE.object
                 [ ( "user", JE.string r.user )
-                , ( "linespec", lineSpecEncoder r.linespec )
+                , ( "s", lineSpecEncoder r.linespec )
                 ]
 
         TimeLineSpec r ->
             JE.object
                 [ ( "time", JE.float r.time )
-                , ( "linespec", lineSpecEncoder r.linespec )
+                , ( "s", lineSpecEncoder r.linespec )
                 ]
 
         CustomLineSpec state ->
@@ -776,6 +866,11 @@ lsDecoder : Decoder (LineSpec state)
 lsDecoder =
     JD.oneOf
         [ JD.map StringLineSpec JD.string
+        , JD.map
+            (\string ->
+                UrlLineSpec string
+            )
+            (JD.field "url" JD.string)
         , JD.map2
             (\user spec ->
                 UserLineSpec
@@ -784,7 +879,7 @@ lsDecoder =
                     }
             )
             (JD.field "user" JD.string)
-            (JD.field "linespec" <| JD.lazy (\() -> lineSpecDecoder))
+            (JD.field "s" <| JD.lazy (\() -> lineSpecDecoder))
         , JD.map2
             (\time spec ->
                 TimeLineSpec
@@ -793,7 +888,7 @@ lsDecoder =
                     }
             )
             (JD.field "time" JD.float)
-            (JD.field "linespec" <| JD.lazy (\() -> lineSpecDecoder))
+            (JD.field "s" <| JD.lazy (\() -> lineSpecDecoder))
         ]
 
 
