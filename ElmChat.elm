@@ -162,7 +162,7 @@ makeLineSpec message user time =
 
 urlRegex : Regex
 urlRegex =
-    regex "(.*\\s+|^)([A-Za-z]*://\\S*|\\w+\\.[A-Za-z]+\\S*)(.*)"
+    regex "(.*\\s+|^)([A-Za-z]*://\\S*|\\w+[A-Za-z0-9-]*\\.[A-Za-z]+\\S*)(.*)"
 
 
 {-| Parse the first URL out of a string.
