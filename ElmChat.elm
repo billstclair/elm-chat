@@ -39,6 +39,7 @@ module ElmChat
         , restoreScroll
         , settingsDecoder
         , settingsEncoder
+        , styledInputBox
         , timeString
         , timestampString
         )
@@ -58,7 +59,8 @@ module ElmChat
 
 # Functions
 
-@docs makeSettings, chat, addChat, addLineSpec, inputBox, makeLineSpec
+@docs makeSettings, chat, addChat, inputBox, styledInputBox
+@docs addLineSpec, makeLineSpec
 @docs encodeSettings, settingsEncoder, decodeSettings, settingsDecoder
 @docs restoreScroll
 
@@ -297,7 +299,7 @@ defaultExtraAttributes =
     }
 
 
-{-| A function to turn a `Settings` record and a `Cmd` into a `Msg`.
+{-| A function to turn a `Settings` record and a `Cmd` into a `msg`.
 -}
 type alias Updater state msg =
     CustomSettings state msg -> Cmd msg -> msg
@@ -664,7 +666,7 @@ addLineSpec settings linespec =
 ---
 
 
-{-| A function to turn an input string and a `Settings` record into a `Msg`.
+{-| A function to turn an input string and a `Settings` record into a `msg`.
 -}
 type alias Sender state msg =
     String -> CustomSettings state msg -> msg
@@ -696,24 +698,41 @@ Args are `textSize buttonText sender settings`.
 
 `buttonText` is the text for the button that sends the input.
 
-`sender` is a function to turn an input string and `settings into a`Msg`.
+`sender` is a function to turn an input string and `settings into a`msg`.
 
 `settings` is your `Settings` record.
 
 -}
 inputBox : Int -> String -> Sender state msg -> CustomSettings state msg -> Html msg
-inputBox textSize buttonText sender settings =
+inputBox =
+    styledInputBox [] []
+
+
+{-| Same as `inputBox`, but takes two additional lists of attributes.
+
+The first list is for the `input` box. The second is for the `button`.
+
+-}
+styledInputBox : List (Attribute msg) -> List (Attribute msg) -> Int -> String -> Sender state msg -> CustomSettings state msg -> Html msg
+styledInputBox inputAttributes buttonAttributes textSize buttonText sender settings =
     span []
         [ input
-            [ type_ "text"
-            , onInput (\text -> noUpdate { settings | input = text })
-            , onKeydown <| keyDown sender settings
-            , size textSize
-            , value settings.input
-            ]
+            (List.append
+                [ type_ "text"
+                , onInput (\text -> noUpdate { settings | input = text })
+                , onKeydown <| keyDown sender settings
+                , size textSize
+                , value settings.input
+                ]
+                inputAttributes
+            )
             []
         , text " "
-        , button [ onClick <| send sender settings ]
+        , button
+            (List.append
+                [ onClick <| send sender settings ]
+                buttonAttributes
+            )
             [ text buttonText ]
         ]
 
