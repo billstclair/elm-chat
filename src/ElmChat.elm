@@ -148,7 +148,7 @@ regex string =
 
 urlRegex : Regex
 urlRegex =
-    regex "(.*\\s+|^)([A-Za-z]+://\\S+|\\w+[A-Za-z0-9-]*\\.[A-Za-z]+\\S*)(.*)"
+    regex "[A-Za-z]+://\\S+|\\w+[A-Za-z0-9-]*\\.[A-Za-z]+\\S*"
 
 
 {-| Parse the first URL out of a string.
@@ -160,22 +160,26 @@ The result is `Just (prefix, url, suffix)`, if there is a URL, or `Nothing` othe
 -}
 parseOutUrl : String -> Maybe ( String, String, String )
 parseOutUrl string =
-    case Regex.find urlRegex string of
+    case Regex.findAtMost 1 urlRegex string of
         [ match ] ->
-            case match.submatches of
-                [ prefix, Just url, suffix ] ->
-                    let
-                        ( realUrl, urlSuffix ) =
-                            trimUrl url
-                    in
-                    Just
-                        ( Maybe.withDefault "" prefix
-                        , realUrl
-                        , urlSuffix ++ Maybe.withDefault "" suffix
-                        )
+            let
+                prefix =
+                    String.left match.index string
 
-                _ ->
-                    Nothing
+                url =
+                    match.match
+
+                suffix =
+                    String.dropLeft (match.index + String.length url) string
+
+                ( realUrl, urlSuffix ) =
+                    trimUrl url
+            in
+            Just
+                ( prefix
+                , realUrl
+                , urlSuffix ++ suffix
+                )
 
         _ ->
             Nothing
