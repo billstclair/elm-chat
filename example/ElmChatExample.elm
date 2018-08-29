@@ -10,8 +10,9 @@
 ----------------------------------------------------------------------
 
 
-module ElmChatExample exposing (..)
+module ElmChatExample exposing (Model, Msg(..), Settings, b, center, chatSend, chatSendInternal, copyright, defaultAttributes, delayedAction, init, main, nbsp, stringFromCode, update, view)
 
+import Browser
 import Char
 import Debug exposing (log)
 import ElmChat exposing (LineSpec(..), defaultExtraAttributes)
@@ -35,12 +36,12 @@ import Html
 import Html.Attributes exposing (disabled, href, size, style, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Task
-import Time exposing (Time)
+import Time exposing (Posix)
 
 
 main =
-    Html.program
-        { init = init
+    Browser.element
+        { init = \() -> init
         , view = view
         , update = update
         , subscriptions = \_ -> Sub.none
@@ -57,7 +58,7 @@ type alias Model =
     -- Your code won't need a duplicate settings property.
     -- It's here only because this example has two input boxes.
     , settings2 : ElmChat.Settings Msg
-    , time : Time
+    , time : Posix
     , json : String
     , error : Maybe String
     }
@@ -72,13 +73,13 @@ type Msg
     | ChatSend2 String String (ElmChat.Settings Msg)
     | UpdateJson String
     | Restore
-    | DelayedAction (Model -> ( Model, Cmd Msg )) Time
+    | DelayedAction (Model -> ( Model, Cmd Msg )) Posix
 
 
-attributes =
+defaultAttributes =
     { defaultExtraAttributes
         | textArea =
-            style [ ( "border-color", "blue" ) ]
+            style "border-color" "blue"
                 :: defaultExtraAttributes.textArea
     }
 
@@ -90,7 +91,7 @@ init =
             ElmChat.makeSettings "id1" 14 True ChatUpdate
 
         settings2 =
-            { settings | attributes = attributes }
+            { settings | attributes = defaultAttributes }
     in
     ( { settings = settings2
       , settings2 =
@@ -98,7 +99,7 @@ init =
                 | id = "id2"
                 , updater = ElmChat.TheUpdater ChatUpdate2
             }
-      , time = 0
+      , time = Time.millisToPosix 0
       , json = ""
       , error = Nothing
       }
@@ -132,8 +133,8 @@ update msg model =
 
         Restore ->
             case ElmChat.decodeSettings ChatUpdate model.json of
-                Err msg ->
-                    ( { model | error = Just msg }
+                Err m ->
+                    ( { model | error = Just m }
                     , Cmd.none
                     )
 
@@ -151,10 +152,10 @@ update msg model =
 
 chatSend : String -> String -> Settings -> Settings -> Model -> ( Model, Cmd Msg )
 chatSend name line settings1 settings2 model =
-    model
-        ! [ delayedAction <|
-                chatSendInternal name line settings1 settings2
-          ]
+    ( model
+    , delayedAction <|
+        chatSendInternal name line settings1 settings2
+    )
 
 
 chatSendInternal : String -> String -> Settings -> Settings -> Model -> ( Model, Cmd Msg )
@@ -164,11 +165,12 @@ chatSendInternal name line settings1 settings2 model =
             ElmChat.addLineSpec settings1 <|
                 ElmChat.makeLineSpec line (Just name) (Just model.time)
     in
-    { model
+    ( { model
         | settings = settings1
         , settings2 = settings2
-    }
-        ! [ cmd ]
+      }
+    , cmd
+    )
 
 
 delayedAction : (Model -> ( Model, Cmd Msg )) -> Cmd Msg
@@ -242,7 +244,7 @@ view model =
                     ]
                 ]
             ]
-        , p [ style [ ( "color", "red" ) ] ]
+        , p [ style "color" "red" ]
             [ case model.error of
                 Nothing ->
                     text nbsp

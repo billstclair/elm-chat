@@ -10,39 +10,19 @@
 ----------------------------------------------------------------------
 
 
-module ElmChat
-    exposing
-        ( CustomRenderers(..)
-        , CustomSettings
-        , ExtraAttributes
-        , LineSpec(..)
-        , Overrider
-        , Sender
-        , Settings
-        , StateRenderer
-        , TheUpdater(..)
-        , Updater
-        , addChat
-        , addLineSpec
-        , chat
-        , customSettingsDecoder
-        , customSettingsEncoder
-        , decodeCustomSettings
-        , decodeSettings
-        , defaultExtraAttributes
-        , encodeCustomSettings
-        , encodeSettings
-        , inputBox
-        , makeLineSpec
-        , makeSettings
-        , parseOutUrl
-        , restoreScroll
-        , settingsDecoder
-        , settingsEncoder
-        , styledInputBox
-        , timeString
-        , timestampString
-        )
+module ElmChat exposing
+    ( Settings, ExtraAttributes, Updater, Sender, LineSpec(..)
+    , TheUpdater(..), CustomSettings
+    , makeSettings, chat, addChat, inputBox, styledInputBox
+    , addLineSpec, makeLineSpec
+    , encodeSettings, settingsEncoder, decodeSettings, settingsDecoder
+    , restoreScroll
+    , timeString, timestampString, parseOutUrl
+    , CustomRenderers(..), Overrider, StateRenderer
+    , encodeCustomSettings, customSettingsEncoder
+    , decodeCustomSettings, customSettingsDecoder
+    , defaultExtraAttributes
+    )
 
 {-| This module contains a simple chat component that you can easily add to your Elm user interface.
 
@@ -83,9 +63,8 @@ module ElmChat
 
 -}
 
-import Date exposing (Date)
-import Dom.Scroll as Scroll
-import Formatting as F exposing ((<>), Format)
+import Browser.Dom as Dom
+import DateFormat as DF
 import Html
     exposing
         ( Attribute
@@ -118,9 +97,9 @@ import Html.Attributes
 import Html.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE exposing (Value)
-import Regex exposing (HowMany(..), Regex, regex)
-import Task
-import Time exposing (Time)
+import Regex exposing (Regex)
+import Task exposing (Task)
+import Time exposing (Posix, Zone)
 
 
 {-| Represents a single line in a chat.
@@ -133,7 +112,7 @@ type LineSpec state
         , linespec : LineSpec state
         }
     | TimeLineSpec
-        { time : Time
+        { time : Posix
         , linespec : LineSpec state
         }
     | CustomLineSpec state
@@ -141,17 +120,17 @@ type LineSpec state
 
 {-| Make a `LineSpec` including a message and an optional user and time.
 -}
-makeLineSpec : String -> Maybe String -> Maybe Time -> LineSpec state
-makeLineSpec message user time =
+makeLineSpec : String -> Maybe String -> Maybe Posix -> LineSpec state
+makeLineSpec message maybeUser time =
     case time of
         Just t ->
             TimeLineSpec
                 { time = t
-                , linespec = makeLineSpec message user Nothing
+                , linespec = makeLineSpec message maybeUser Nothing
                 }
 
         Nothing ->
-            case user of
+            case maybeUser of
                 Nothing ->
                     UrlLineSpec message
 
@@ -160,6 +139,11 @@ makeLineSpec message user time =
                         { user = user
                         , linespec = UrlLineSpec message
                         }
+
+
+regex : String -> Regex
+regex string =
+    Maybe.withDefault Regex.never <| Regex.fromString string
 
 
 urlRegex : Regex
@@ -176,7 +160,7 @@ The result is `Just (prefix, url, suffix)`, if there is a URL, or `Nothing` othe
 -}
 parseOutUrl : String -> Maybe ( String, String, String )
 parseOutUrl string =
-    case Regex.find (AtMost 1) urlRegex string of
+    case Regex.find urlRegex string of
         [ match ] ->
             case match.submatches of
                 [ Just prefix, Just url, Just suffix ] ->
@@ -201,6 +185,7 @@ trimUrl url =
     in
     if List.member lastChar [ ".", "?", "!" ] then
         ( String.dropRight 1 url, lastChar )
+
     else
         ( url, "" )
 
@@ -282,19 +267,15 @@ type alias ExtraAttributes msg =
 defaultExtraAttributes : ExtraAttributes msg
 defaultExtraAttributes =
     { chatTable = []
-    , sizeButtons = [ style [ ( "font-weight", "bold" ) ] ]
+    , sizeButtons = [ style "font-weight" "bold" ]
     , sizeColumn =
-        [ style
-            [ ( "text-align", "center" )
-            , ( "vertical-align", "top" )
-            ]
+        [ style "text-align" "center"
+        , style "vertical-align" "top"
         ]
     , textColumn = []
     , textArea =
-        [ style
-            [ ( "width", "30em" )
-            , ( "height", "6em" )
-            ]
+        [ style "width" "30em"
+        , style "height" "6em"
         ]
     }
 
@@ -351,6 +332,38 @@ noUpdate settings =
     update settings Cmd.none
 
 
+{-| Simulate the old Scroll.y
+
+This begs to be updated to scroll correctly even if the viewport has changed.
+
+-}
+getScrollY : String -> Task Dom.Error Float
+getScrollY id =
+    Dom.getViewportOf id
+        |> Task.andThen
+            (\viewport ->
+                Task.succeed viewport.viewport.y
+            )
+
+
+{-| Simulate the old Scroll.toY
+-}
+scrollToY : String -> Float -> Task Dom.Error ()
+scrollToY id y =
+    Dom.setViewportOf id 0 y
+
+
+{-| Simulate the old Scroll.toBottom
+-}
+scrollToBottom : String -> Task Dom.Error ()
+scrollToBottom id =
+    Dom.getViewportOf id
+        |> Task.andThen
+            (\viewport ->
+                Dom.setViewportOf id 0 viewport.scene.height
+            )
+
+
 getScroll : CustomSettings state msg -> msg
 getScroll settings =
     update settings
@@ -364,12 +377,12 @@ getScroll settings =
                         noUpdate { settings | scroll = y }
             )
          <|
-            Scroll.y settings.id
+            getScrollY settings.id
         )
 
 
-scroll : CustomSettings state msg -> Float -> msg
-scroll settings amount =
+doScroll : CustomSettings state msg -> Float -> msg
+doScroll settings amount =
     let
         s =
             amount
@@ -381,8 +394,9 @@ scroll settings amount =
         in
         update newSettings
             (Task.attempt (\_ -> getScroll newSettings) <|
-                Scroll.toBottom settings.id
+                scrollToBottom settings.id
             )
+
     else
         noUpdate settings
 
@@ -399,8 +413,10 @@ setFontSize settings dir =
         newsize =
             if dir > 0 then
                 size + inc
+
             else if dir == 0 then
                 settings.defaultFontSize
+
             else
                 size - inc
     in
@@ -439,20 +455,17 @@ chat settings =
                         , ( 0, "Default chat size", "O" )
                         , ( -1, "Decrease chat size", "v" )
                         ]
+
               else
                 text ""
             , td settings.attributes.textColumn
                 [ div
                     (List.append
                         [ id settings.id
-                        , style
-                            [ ( "font-size"
-                              , toString settings.fontSize ++ "pt"
-                              )
-                            , ( "overflow-y", "scroll" )
-                            , ( "border", "1px black solid" )
-                            , ( "resize", "both" )
-                            ]
+                        , style "font-size" (String.fromInt settings.fontSize ++ "pt")
+                        , style "overflow-y" "scroll"
+                        , style "border" "1px black solid"
+                        , style "resize" "both"
                         , readonly True
                         ]
                         settings.attributes.textArea
@@ -467,7 +480,7 @@ chat settings =
 
 lineDiv : Html msg -> Html msg
 lineDiv line =
-    div [ style [ ( "padding-bottom", "2px" ) ] ]
+    div [ style "padding-bottom" "2px" ]
         [ line ]
 
 
@@ -492,8 +505,8 @@ renderLineSpec settings linespec =
 
 
 renderLineSpecInternal : CustomSettings state msg -> LineSpec state -> Html msg
-renderLineSpecInternal settings linespec =
-    case linespec of
+renderLineSpecInternal settings alinespec =
+    case alinespec of
         StringLineSpec string ->
             text string
 
@@ -512,11 +525,11 @@ renderLineSpecInternal settings linespec =
         TimeLineSpec { time, linespec } ->
             span []
                 [ span
-                    [ style [ ( "font-size", "75%" ) ]
+                    [ style "font-size" "75%"
                     ]
                     [ text "["
-                    , span [ style [ ( "font-family", "monospace" ) ] ]
-                        [ text <| timeString time ]
+                    , span [ style "font-family" "monospace" ]
+                        [ text <| timeString Time.utc time ]
                     , text "]"
                     ]
                 , text " "
@@ -541,87 +554,64 @@ renderStringWithUrls : String -> Html msg
 renderStringWithUrls string =
     let
         loop : String -> List (Html msg) -> Html msg
-        loop =
-            \tail res ->
-                if tail == "" then
-                    span [] res
-                else
-                    case parseOutUrl tail of
-                        Nothing ->
-                            loop "" <|
-                                List.concat [ res, [ text tail ] ]
+        loop tail res =
+            if tail == "" then
+                span [] res
 
-                        Just ( prefix, url, suffix ) ->
-                            let
-                                withProtocol =
-                                    if String.contains "://" url then
-                                        url
-                                    else
-                                        "http://" ++ url
-                            in
-                            loop suffix <|
-                                List.concat
-                                    [ res
-                                    , [ text prefix
-                                      , a [ href withProtocol, target "_blank" ]
-                                            [ text url ]
-                                      ]
-                                    ]
+            else
+                case parseOutUrl tail of
+                    Nothing ->
+                        loop "" <|
+                            List.concat [ res, [ text tail ] ]
+
+                    Just ( prefix, url, suffix ) ->
+                        let
+                            withProtocol =
+                                if String.contains "://" url then
+                                    url
+
+                                else
+                                    "http://" ++ url
+                        in
+                        loop suffix <|
+                            List.concat
+                                [ res
+                                , [ text prefix
+                                  , a [ href withProtocol, target "_blank" ]
+                                        [ text url ]
+                                  ]
+                                ]
     in
     loop string []
 
 
-hourFormat : Format Date String
-hourFormat =
-    F.padLeft 2 '0' (Date.hour >> F.int)
+colonToken : DF.Token
+colonToken =
+    DF.text ":"
 
 
-minuteFormat : Format Date String
-minuteFormat =
-    F.padLeft 2 '0' (Date.minute >> F.int)
-
-
-secondFormat : Format Date String
-secondFormat =
-    F.padLeft 2 '0' (Date.second >> F.int)
-
-
-timeStampFormat : Format Date String
-timeStampFormat =
-    hourFormat <> F.s ":" <> minuteFormat <> F.s ":" <> secondFormat
-
-
-timeFormat : Format Date String
-timeFormat =
-    hourFormat <> F.s ":" <> minuteFormat
-
-
-{-| Convert a `Time` to a string in the format "HH:MM:SS"
+{-| Convert a zoned time to a string in the format "HH:MM:SS"
 -}
-timestampString : Time -> String
-timestampString time =
-    let
-        time2 =
-            time
+timestampString : Zone -> Posix -> String
+timestampString =
+    DF.format
+        [ DF.hourMilitaryFixed
+        , colonToken
+        , DF.minuteFixed
+        , colonToken
+        , DF.secondFixed
+        ]
 
-        date =
-            Date.fromTime time2
-    in
-    F.print timeStampFormat date
 
-
-{-| Convert a `Time` to a string in the format "HH:MM"
+{-| Convert a zoned time to a string in the format "HH:MM"
 -}
-timeString : Time -> String
-timeString time =
-    let
-        time2 =
-            time
-
-        date =
-            Date.fromTime time2
-    in
-    F.print timeFormat date
+timeString : Zone -> Posix -> String
+timeString =
+    DF.format
+        [ DF.hourMilitaryFixed
+        , colonToken
+        , DF.minuteFixed
+        ]
 
 
 {-| Add a string to the chat box.
@@ -650,13 +640,13 @@ addLineSpec settings linespec =
         (\res ->
             case res of
                 Ok amount ->
-                    scroll newSettings amount
+                    doScroll newSettings amount
 
                 Err _ ->
                     noUpdate newSettings
         )
       <|
-        Scroll.y settings.id
+        getScrollY settings.id
     )
 
 
@@ -676,6 +666,7 @@ keyDown : Sender state msg -> CustomSettings state msg -> Int -> msg
 keyDown sender settings keycode =
     if keycode == 13 then
         sender settings.input { settings | input = "" }
+
     else
         noUpdate settings
 
@@ -698,7 +689,7 @@ Args are `textSize buttonText sender settings`.
 
 `buttonText` is the text for the button that sends the input.
 
-`sender` is a function to turn an input string and `settings into a`msg`.
+`sender` is a function to turn an input string and `settings into a`msg\`.
 
 `settings` is your `Settings` record.
 
@@ -759,7 +750,7 @@ settingsEncoder : CustomSettings state msg -> Value
 settingsEncoder settings =
     JE.object
         [ ( "fontSize", JE.int settings.fontSize )
-        , ( "lines", JE.list <| List.map lineSpecEncoder settings.lines )
+        , ( "lines", JE.list identity (List.map lineSpecEncoder settings.lines) )
         , ( "scroll", JE.float settings.scroll )
         , ( "id", JE.string settings.id )
         , ( "defaultFontSize", JE.int settings.defaultFontSize )
@@ -785,7 +776,7 @@ lineSpecEncoder linespec =
 
         TimeLineSpec r ->
             JE.object
-                [ ( "time", JE.float r.time )
+                [ ( "time", JE.int <| Time.posixToMillis r.time )
                 , ( "s", lineSpecEncoder r.linespec )
                 ]
 
@@ -815,7 +806,10 @@ customSettingsEncoder : CustomSettings state msg -> (state -> Value) -> Value
 customSettingsEncoder settings encoder =
     JE.object
         [ ( "fontSize", JE.int settings.fontSize )
-        , ( "lines", JE.list <| List.map (customLineSpecEncoder encoder) settings.lines )
+        , ( "lines"
+          , JE.list identity
+                (List.map (customLineSpecEncoder encoder) settings.lines)
+          )
         , ( "scroll", JE.float settings.scroll )
         , ( "id", JE.string settings.id )
         , ( "defaultFontSize", JE.int settings.defaultFontSize )
@@ -834,6 +828,16 @@ customLineSpecEncoder encoder linespec =
             lineSpecEncoder linespec
 
 
+decodeString : Decoder x -> String -> Result String x
+decodeString decoder json =
+    case JD.decodeString decoder json of
+        Ok x ->
+            Ok x
+
+        Err err ->
+            Err <| JD.errorToString err
+
+
 {-| Turn a JSON string back into a `CustomSettings` record.
 
 `Updater` is as to `makeSettings`.
@@ -844,7 +848,7 @@ after decoding, if you customize them.
 -}
 decodeSettings : Updater state msg -> String -> Result String (CustomSettings state msg)
 decodeSettings updater json =
-    JD.decodeString (settingsDecoder updater) json
+    decodeString (settingsDecoder updater) json
 
 
 restoreSettings : Updater state msg -> Int -> List (LineSpec state) -> Float -> String -> Int -> Bool -> CustomSettings state msg
@@ -902,11 +906,11 @@ lsDecoder =
         , JD.map2
             (\time spec ->
                 TimeLineSpec
-                    { time = time
+                    { time = Time.millisToPosix time
                     , linespec = spec
                     }
             )
-            (JD.field "time" JD.float)
+            (JD.field "time" JD.int)
             (JD.field "s" <| JD.lazy (\() -> lineSpecDecoder))
         ]
 
@@ -923,7 +927,7 @@ after decoding, if you customize them.
 -}
 decodeCustomSettings : Updater state msg -> Decoder state -> String -> Result String (CustomSettings state msg)
 decodeCustomSettings updater decoder json =
-    JD.decodeString (customSettingsDecoder updater decoder) json
+    decodeString (customSettingsDecoder updater decoder) json
 
 
 {-| The JSON Decoder for `decodeCustomSettings`.
@@ -964,4 +968,4 @@ customLsDecoder decoder =
 restoreScroll : CustomSettings state msg -> Cmd msg
 restoreScroll settings =
     Task.attempt (\_ -> noUpdate settings) <|
-        Scroll.toY settings.id (settings.scroll + 1)
+        scrollToY settings.id (settings.scroll + 1)
