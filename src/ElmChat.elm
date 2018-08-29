@@ -163,12 +163,16 @@ parseOutUrl string =
     case Regex.find urlRegex string of
         [ match ] ->
             case match.submatches of
-                [ Just prefix, Just url, Just suffix ] ->
+                [ prefix, Just url, suffix ] ->
                     let
                         ( realUrl, urlSuffix ) =
                             trimUrl url
                     in
-                    Just ( prefix, realUrl, urlSuffix ++ suffix )
+                    Just
+                        ( Maybe.withDefault "" prefix
+                        , realUrl
+                        , urlSuffix ++ Maybe.withDefault "" suffix
+                        )
 
                 _ ->
                     Nothing
