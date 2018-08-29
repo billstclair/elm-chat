@@ -36,7 +36,7 @@ import Html
 import Html.Attributes exposing (disabled, href, size, style, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Task
-import Time exposing (Posix)
+import Time exposing (Posix, Zone)
 
 
 main =
@@ -74,6 +74,7 @@ type Msg
     | UpdateJson String
     | Restore
     | DelayedAction (Model -> ( Model, Cmd Msg )) Posix
+    | SetZone Zone
 
 
 defaultAttributes =
@@ -91,7 +92,9 @@ init =
             ElmChat.makeSettings "id1" 14 True ChatUpdate
 
         settings2 =
-            { settings | attributes = defaultAttributes }
+            { settings
+                | attributes = defaultAttributes
+            }
     in
     ( { settings = settings2
       , settings2 =
@@ -103,7 +106,7 @@ init =
       , json = ""
       , error = Nothing
       }
-    , Cmd.none
+    , Task.perform SetZone Time.here
     )
 
 
@@ -148,6 +151,18 @@ update msg model =
 
         DelayedAction updater time ->
             updater { model | time = time }
+
+        SetZone zone ->
+            let
+                settings =
+                    model.settings
+            in
+            ( { model
+                | settings =
+                    { settings | zone = zone }
+              }
+            , Cmd.none
+            )
 
 
 chatSend : String -> String -> Settings -> Settings -> Model -> ( Model, Cmd Msg )

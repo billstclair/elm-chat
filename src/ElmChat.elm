@@ -242,6 +242,7 @@ type alias CustomSettings state msg =
     , defaultFontSize : Int
     , showSizeControls : Bool
     , updater : TheUpdater state msg
+    , zone : Zone
     }
 
 
@@ -325,6 +326,7 @@ makeSettings id initialFontSize showSizeControls updater =
     , defaultFontSize = initialFontSize
     , showSizeControls = showSizeControls
     , updater = TheUpdater updater
+    , zone = Time.utc
     }
 
 
@@ -537,7 +539,7 @@ renderLineSpecInternal settings alinespec =
                     ]
                     [ text "["
                     , span [ style "font-family" "monospace" ]
-                        [ text <| timeString Time.utc time ]
+                        [ text <| timeString settings.zone time ]
                     , text "]"
                     ]
                 , text " "
@@ -871,6 +873,7 @@ restoreSettings updater fontSize lines scroll id defaultFontSize showSizeControl
     , defaultFontSize = defaultFontSize
     , showSizeControls = showSizeControls
     , updater = TheUpdater updater
+    , zone = Time.utc
     }
 
 
