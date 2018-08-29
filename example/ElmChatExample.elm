@@ -142,11 +142,17 @@ update msg model =
                     )
 
                 Ok settings ->
+                    let
+                        settings2 =
+                            { settings
+                                | zone = model.settings.zone
+                            }
+                    in
                     ( { model
-                        | settings = settings
+                        | settings = settings2
                         , error = Nothing
                       }
-                    , ElmChat.restoreScroll settings
+                    , ElmChat.restoreScroll settings2
                     )
 
         DelayedAction updater time ->
