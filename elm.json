@@ -3,7 +3,7 @@
     "name": "billstclair/elm-chat",
     "summary": "A simple chat component, easy to add to your user interface.",
     "license": "MIT",
-    "version": "2.1.0",
+    "version": "3.0.0",
     "exposed-modules": [
         "ElmChat"
     ],
